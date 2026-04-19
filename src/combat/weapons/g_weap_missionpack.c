@@ -1,3 +1,5 @@
+#ifdef VRX_REPRO
+
 #include "g_local.h"
 
 // from g_weapon.c
@@ -557,7 +559,7 @@ static void flechette_touch (edict_t *self, edict_t *other, cplane_t *plane, csu
     {
         T_Damage(other, self, self->owner, self->velocity, self->s.origin,
                  plane ? plane->normal : vec3_origin, self->dmg, self->dmg_radius,
-                 DAMAGE_BULLET, MOD_MACHINEGUN);
+                 DAMAGE_BULLET | DAMAGE_PIERCING, MOD_ETFRIFLE);
     }
     else
     {
@@ -1751,3 +1753,5 @@ void fire_tesla(edict_t *self, vec3_t start, vec3_t aimdir, int damage, int spee
     if (self->client)
         layout_add_tracked_entity(&self->client->layout, tesla);
 }
+
+#endif //VRX_REPRO

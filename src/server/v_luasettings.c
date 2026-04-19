@@ -416,6 +416,9 @@ double GRENADES_PICKUP;
 double ROCKETS_PICKUP;
 double CELLS_PICKUP;
 double SLUGS_PICKUP;
+double MAGSLUG_PICKUP;
+double FLECHETTES_PICKUP;
+double ROUNDS_PICKUP;
 double EXP_PLAYER_BASE;
 double CREDITS_PLAYER_BASE;
 double CREDITS_OTHER_BASE;
@@ -491,6 +494,26 @@ double BFG10K_INITIAL_DURATION;
 double BFG10K_ADDON_DURATION;
 double BFG10K_DEFAULT_DURATION;
 double BFG10K_DEFAULT_SLIDE;
+double ETFRIFLE_INITIAL_DAMAGE;
+double ETFRIFLE_ADDON_DAMAGE;
+double ETFRIFLE_INITIAL_SPEED;
+double ETFRIFLE_ADDON_SPEED;
+double PHALANX_INITIAL_DAMAGE;
+double PHALANX_ADDON_DAMAGE;
+double PHALANX_INITIAL_RADIUS;
+double PHALANX_ADDON_RADIUS;
+double PHALANX_INITIAL_SPEED;
+double PHALANX_ADDON_SPEED;
+double IONRIPPER_INITIAL_DAMAGE;
+double IONRIPPER_ADDON_DAMAGE;
+double IONRIPPER_INITIAL_SPEED;
+double IONRIPPER_ADDON_SPEED;
+double DISRUPTOR_INITIAL_DAMAGE;
+double DISRUPTOR_ADDON_DAMAGE;
+double DISRUPTOR_INITIAL_SPEED;
+double DISRUPTOR_ADDON_SPEED;
+double PLASMABEAM_INITIAL_DAMAGE;
+double PLASMABEAM_ADDON_DAMAGE;
 double TOTEM_MAX_RANGE;
 double TOTEM_COST;
 double TOTEM_HEALTH_BASE;
@@ -1630,6 +1653,9 @@ void Lua_LoadVariables()
 	ROCKETS_PICKUP = vrx_lua_get_variable("ROCKETS_PICKUP", 20);
 	CELLS_PICKUP = vrx_lua_get_variable("CELLS_PICKUP", 70);
 	SLUGS_PICKUP = vrx_lua_get_variable("SLUGS_PICKUP", 15);
+	MAGSLUG_PICKUP = vrx_lua_get_variable("MAGSLUG_PICKUP", 30);
+	FLECHETTES_PICKUP = vrx_lua_get_variable("BULLETS_PICKUP", 50);
+	ROUNDS_PICKUP = vrx_lua_get_variable("BULLETS_PICKUP", 10);
 
 	EXP_PLAYER_BASE = vrx_lua_get_variable("EXP_PLAYER_BASE", 50);
 
@@ -1725,6 +1751,7 @@ void Lua_LoadVariables()
 
 #pragma endregion
 #pragma region BFG10K
+
 	BFG10K_INITIAL_DAMAGE = vrx_lua_get_variable("BFG10K_INITIAL_DAMAGE", 25);
 	BFG10K_ADDON_DAMAGE = vrx_lua_get_variable("BFG10K_ADDON_DAMAGE", 4.0);
 	BFG10K_INITIAL_SPEED = vrx_lua_get_variable("BFG10K_INITIAL_SPEED", 750);
@@ -1734,6 +1761,47 @@ void Lua_LoadVariables()
 	BFG10K_ADDON_DURATION = vrx_lua_get_variable("BFG10K_ADDON_DURATION", 0.1);
 	BFG10K_DEFAULT_DURATION = vrx_lua_get_variable("BFG10K_DEFAULT_DURATION", 1);
 	BFG10K_DEFAULT_SLIDE = vrx_lua_get_variable("BFG10K_DEFAULT_SLIDE", 0);
+
+#pragma endregion
+#pragma region ETFRIFLE
+
+	ETFRIFLE_INITIAL_DAMAGE = vrx_lua_get_variable("ETFRIFLE_INITIAL_DAMAGE", 12);
+	ETFRIFLE_ADDON_DAMAGE = vrx_lua_get_variable("ETFRIFLE_ADDON_DAMAGE", 1);
+	ETFRIFLE_INITIAL_SPEED = vrx_lua_get_variable("ETFRIFLE_INITIAL_SPEED", 750);
+	ETFRIFLE_ADDON_SPEED = vrx_lua_get_variable("ETFRIFLE_ADDON_SPEED", 25);
+
+#pragma endregion
+#pragma region DISRUPTOR
+
+	DISRUPTOR_INITIAL_DAMAGE = vrx_lua_get_variable("DISRUPTOR_INITIAL_DAMAGE", 90);
+	DISRUPTOR_ADDON_DAMAGE = vrx_lua_get_variable("DISRUPTOR_ADDON_DAMAGE", 4);
+	DISRUPTOR_INITIAL_SPEED = vrx_lua_get_variable("DISRUPTOR_INITIAL_SPEED", 1200);
+	DISRUPTOR_ADDON_SPEED = vrx_lua_get_variable("DISRUPTOR_ADDON_SPEED", 20);
+
+#pragma endregion
+#pragma region IONRIPPER
+
+	IONRIPPER_INITIAL_DAMAGE = vrx_lua_get_variable("IONRIPPER_INITIAL_DAMAGE", 50);
+	IONRIPPER_ADDON_DAMAGE = vrx_lua_get_variable("IONRIPPER_ADDON_DAMAGE", 2);
+	IONRIPPER_INITIAL_SPEED = vrx_lua_get_variable("IONRIPPER_INITIAL_SPEED", 500);
+	IONRIPPER_ADDON_SPEED = vrx_lua_get_variable("IONRIPPER_ADDON_SPEED", 40);
+
+#pragma endregion
+#pragma region PHALANX
+
+	PHALANX_INITIAL_DAMAGE = vrx_lua_get_variable("PHALANX_INITIAL_DAMAGE", 70);
+	PHALANX_ADDON_DAMAGE = vrx_lua_get_variable("PHALANX_ADDON_DAMAGE", 2);
+	PHALANX_INITIAL_RADIUS = vrx_lua_get_variable("PHALANX_INITIAL_RADIUS", 120);
+	PHALANX_ADDON_RADIUS = vrx_lua_get_variable("PHALANX_ADDON_RADIUS", 2);
+	PHALANX_INITIAL_SPEED = vrx_lua_get_variable("PHALANX_INITIAL_SPEED", 725);
+	PHALANX_ADDON_SPEED = vrx_lua_get_variable("PHALANX_ADDON_SPEED", 15);
+
+#pragma endregion
+#pragma region PLASMABEAM
+
+	PLASMABEAM_INITIAL_DAMAGE = vrx_lua_get_variable("PLASMABEAM_INITIAL_DAMAGE", 12);
+	PLASMABEAM_ADDON_DAMAGE = vrx_lua_get_variable("PLASMABEAM_ADDON_DAMAGE", 1);
+
 #pragma endregion
 #pragma endregion /*Weapons Parameters*/
 

@@ -178,6 +178,9 @@ cvar_t *world_min_shells;
 cvar_t *world_min_grenades;
 cvar_t *world_min_rockets;
 cvar_t *world_min_slugs;
+cvar_t *world_min_flechettes;
+cvar_t *world_min_magslug;
+cvar_t *world_min_rounds;
 
 cvar_t *ctf_enable_balanced_fc;
 
@@ -322,7 +325,9 @@ q_export repro_export_t *GetGameAPI(repro_import_t *import)
 	globals.edict_size = sizeof(edict_t);
 
 	globals.server_flags = SERVER_FLAGS_NONE;
+#ifdef VRX_REPRO
 	globals.Pmove = Pmove;
+#endif
 	globals.GetExtension = repro_get_extension;
 	globals.Bot_SetWeapon = repro_bot_set_weapon;
 	globals.Bot_TriggerEdict = repro_bot_trigger_edict;

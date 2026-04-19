@@ -281,9 +281,6 @@ int vrx_get_hard_max(int index, qboolean general, int class) {
             return 3;
 
             
-        case HASTE:
-            return 10;
-
         // Special cases for the non-general ability mode.
         // Falls through to the default case...
         case STRENGTH:
@@ -505,7 +502,7 @@ void vrx_init_ability_list() {
 }
 
 int vrx_get_last_enabled_skill_index(edict_t *ent, int mode) {
-    int return_index;
+    int return_index = 0;
     for (int i = 0; i < MAX_ABILITIES; i++) {
         if (!ent->myskills.abilities[i].disable) {
             if (ent->myskills.abilities[i].general_skill == mode)

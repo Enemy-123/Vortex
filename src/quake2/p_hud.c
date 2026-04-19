@@ -852,6 +852,10 @@ void G_SetStats(edict_t *ent)
 			ent->client->ps.stats[STAT_AMMO_ICON] = gi.imageindex("a_cells_hud");
 		else if (ent->client->pers.weapon == Fdi_20MM)
 			ent->client->ps.stats[STAT_AMMO_ICON] = gi.imageindex("a_shells_hud");
+		else if (ent->client->pers.weapon == Fdi_ETFRIFLE)
+			ent->client->ps.stats[STAT_AMMO_ICON] = gi.imageindex("a_flechettes_hud");
+		else if (ent->client->pers.weapon == Fdi_PHALANX)
+			ent->client->ps.stats[STAT_AMMO_ICON] = gi.imageindex("a_magslug_hud");
 		else
 			ent->client->ps.stats[STAT_AMMO_ICON] = gi.imageindex("a_blaster_hud");
 		ent->client->ps.stats[STAT_AMMO] = ent->client->pers.inventory[ent->client->ammo_index];
@@ -1090,7 +1094,9 @@ void G_SetStats(edict_t *ent)
 	//K03 Begin
 	//ent->client->ps.stats[STAT_LEVEL] = ent->myskills.level;
 	ent->client->ps.stats[STAT_STREAK] = ent->myskills.streak;
+#ifdef VRX_REPRO
 	ent->client->ps.stats[STAT_XP_PERCENT] = vrx_get_xp_percent(ent->myskills.experience, ent->myskills.level);
+#endif VRX_REPRO
 
 	/*if (timelimit->value)
 	time_left = (timelimit->value*60 - level.time);

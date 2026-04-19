@@ -194,7 +194,7 @@ trace_t _traces(const vec3_t start, const vec3_t mins, const vec3_t maxs, const 
 
 int SV_FlyMove (edict_t *ent, float time, int mask)
 {
-	int			blocked;
+	int			blocked = 0; //TODO: No-op?
 
 	ent->groundentity = nullptr;
 
@@ -692,7 +692,7 @@ void SV_Physics_Toss (edict_t *ent)
 			const float delta = 275 - ent->velocity[2];
 
 			// don't get stuck on the ceiling
-			if (trace.plane.normal[2] != -1.0)
+			if (trace.plane.normal[2] > -0.7)
 				ent->velocity[2] += delta;
 
 			// always bounce away from the wall

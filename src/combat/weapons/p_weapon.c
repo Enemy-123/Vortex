@@ -266,7 +266,7 @@ void ShowGun(edict_t* ent) {
 	}
 
 	j = Get_KindWeapon(ent->client->pers.weapon);
-	if (j == WEAP_GRAPPLE) j = WEAP_BLASTER;
+	if (j == WEAPON_GRAPPLE) j = WEAPON_BLASTER;
 
 	ent->s.modelindex2 = 255;
 	if (ent->client->pers.weapon)
@@ -374,6 +374,30 @@ void NoAmmoWeaponChange(edict_t* ent) {
 		&& ent->client->pers.inventory[ITEM_INDEX(Fdi_SHOTGUN)]) {
 		item = Fdi_SHOTGUN;
 	}
+
+#ifdef VRX_REPRO
+	else if (ent->client->pers.inventory[ITEM_INDEX(Fdi_MAGSLUG)]
+		&& ent->client->pers.inventory[ITEM_INDEX(Fdi_PHALANX)]) {
+		item = Fdi_PHALANX;
+	}
+	else if (ent->client->pers.inventory[ITEM_INDEX(Fdi_FLECHETTES)]
+		&& ent->client->pers.inventory[ITEM_INDEX(Fdi_ETFRIFLE)]) {
+		item = Fdi_ETFRIFLE;
+	}
+	else if (ent->client->pers.inventory[ITEM_INDEX(Fdi_CELLS)]
+		&& ent->client->pers.inventory[ITEM_INDEX(Fdi_PLASMA)]) {
+		item = Fdi_PLASMA;
+	}
+	else if (ent->client->pers.inventory[ITEM_INDEX(Fdi_CELLS)]
+		&& ent->client->pers.inventory[ITEM_INDEX(Fdi_IONRIPPER)]) {
+		item = Fdi_IONRIPPER;
+	}
+	else if (ent->client->pers.inventory[ITEM_INDEX(Fdi_ROUNDS)]
+		&& ent->client->pers.inventory[ITEM_INDEX(Fdi_DISRUPTOR)]) {
+		item = Fdi_DISRUPTOR;
+	}
+#endif //VRX_REPRO
+
 	if (item == NULL) item = Fdi_BLASTER;
 
 	if (ent->svflags & SVF_MONSTER) item->use(ent, item);
@@ -2591,8 +2615,10 @@ static void weapon_disruptor_fire(edict_t *ent)
 	trace_t tr;
 	edict_t *enemy = NULL;
 
-	int damage = 90 + 4 * ent->myskills.weapons[WEAPON_DISRUPTOR].mods[0].current_level;
-	int speed = 1200 + 20 * ent->myskills.weapons[WEAPON_DISRUPTOR].mods[1].current_level;
+	int damage = DISRUPTOR_INITIAL_DAMAGE +
+		( DISRUPTOR_ADDON_DAMAGE * ent->myskills.weapons[WEAPON_DISRUPTOR].mods[0].current_level );
+	int speed = DISRUPTOR_INITIAL_SPEED +
+		( DISRUPTOR_ADDON_SPEED * ent->myskills.weapons[WEAPON_DISRUPTOR].mods[1].current_level );
 
 	if (is_quad)
 		damage *= 4;
@@ -2621,7 +2647,7 @@ static void weapon_disruptor_fire(edict_t *ent)
 
 	gi.sound(ent, CHAN_WEAPON, gi.soundindex("weapons/disint2.wav"), 1, ATTN_NORM, 0);
 
-	if (ent->myskills.weapons[WEAPON_BFG10K].mods[4].current_level < 1)
+	if (ent->myskills.weapons[WEAPON_DISRUPTOR].mods[4].current_level < 1)
 	{
 		gi.WriteByte(svc_muzzleflash);
 		gi.WriteShort(ent - g_edicts);
@@ -2744,9 +2770,11 @@ MISSIONPACK WEAPONS
 static void weapon_ionripper_fire(edict_t *ent)
 {
     vec3_t start, forward, right, offset, tempang;
-    int damage = (deathmatch->value ? 30 : 50) + 2 * ent->myskills.weapons[WEAPON_IONRIPPER].mods[0].current_level;
-    int kick = (deathmatch->value ? 40 : 60);
-    int speed = 500 + 20 * ent->myskills.weapons[WEAPON_IONRIPPER].mods[2].current_level;
+    int damage = IONRIPPER_INITIAL_DAMAGE +
+		( IONRIPPER_ADDON_DAMAGE * ent->myskills.weapons[WEAPON_IONRIPPER].mods[0].current_level );
+    int kick = 60;
+    int speed = IONRIPPER_INITIAL_SPEED +
+		( IONRIPPER_ADDON_SPEED * ent->myskills.weapons[WEAPON_IONRIPPER].mods[2].current_level );
 
     if (is_quad)
     {
@@ -2795,10 +2823,13 @@ void Weapon_Ionripper(edict_t *ent)
 static void weapon_phalanx_fire(edict_t *ent)
 {
     vec3_t start, forward, right, up, offset, v;
-    int damage = 70 + (int)(random() * 10.0) + 2 * ent->myskills.weapons[WEAPON_PHALANX].mods[0].current_level;
-    int radius_damage = 120 + 2 * ent->myskills.weapons[WEAPON_PHALANX].mods[1].current_level;
-    float damage_radius = 120 + 2 * ent->myskills.weapons[WEAPON_PHALANX].mods[1].current_level;
-    int speed = 725 + 15 * ent->myskills.weapons[WEAPON_PHALANX].mods[2].current_level;
+    int damage = PHALANX_INITIAL_DAMAGE + (int)(random() * 10.0) + (PHALANX_ADDON_DAMAGE * ent->myskills.weapons[WEAPON_PHALANX].mods[0].current_level);
+    int radius_damage = PHALANX_INITIAL_RADIUS + (PHALANX_ADDON_RADIUS * ent->myskills.weapons[WEAPON_PHALANX].mods[1].current_level);
+    float damage_radius = radius_damage = PHALANX_INITIAL_RADIUS + (PHALANX_ADDON_RADIUS * ent->myskills.weapons[WEAPON_PHALANX].mods[1].current_level);
+    int speed = PHALANX_INITIAL_SPEED + (PHALANX_ADDON_SPEED * ent->myskills.weapons[WEAPON_PHALANX].mods[2].current_level);
+
+	if (ent->myskills.weapons[WEAPON_PHALANX].mods[4].current_level)
+		is_silenced = MZ_SILENCED;
 
     if (is_quad)
     {
@@ -2833,6 +2864,9 @@ static void weapon_phalanx_fire(edict_t *ent)
         v[ROLL] = ent->client->v_angle[ROLL];
         AngleVectors(v, forward, right, up);
         fire_plasma(ent, start, forward, damage, speed, damage_radius, radius_damage);
+
+		if (!((int)dmflags->value & DF_INFINITE_AMMO))
+			ent->client->pers.inventory[ent->client->ammo_index]--;
 
         gi.WriteByte(svc_muzzleflash);
         gi.WriteShort(ent - g_edicts);
@@ -3009,10 +3043,20 @@ static void weapon_etf_rifle_fire(edict_t *ent)
 {
     vec3_t forward, right, angles, start, offset;
     int i;
-    int damage = 10 + ent->myskills.weapons[WEAPON_ETFRIFLE].mods[0].current_level;
+    int damage = ETFRIFLE_INITIAL_DAMAGE +
+		( RAILGUN_ADDON_DAMAGE * ent->myskills.weapons[WEAPON_ETFRIFLE].mods[0].current_level );
+	int speed = ETFRIFLE_INITIAL_SPEED +
+		( ETFRIFLE_ADDON_SPEED * ent->myskills.weapons[WEAPON_ETFRIFLE].mods[2].current_level );
     int kick = 3;
-    int speed = 750 + 15 * ent->myskills.weapons[WEAPON_ETFRIFLE].mods[2].current_level;
+
+	if (ent->myskills.weapons[WEAPON_ETFRIFLE].mods[3].current_level < 1) {
+		kick *= 2;
+	}
+
     vec3_t kick_origin, kick_angles;
+
+	if (ent->myskills.weapons[WEAPON_ETFRIFLE].mods[4].current_level)
+		is_silenced = MZ_SILENCED;
 
     if (!(ent->client->buttons & BUTTON_ATTACK))
     {
@@ -3060,12 +3104,15 @@ static void weapon_etf_rifle_fire(edict_t *ent)
     P_ProjectSource(ent->client, ent->s.origin, offset, forward, right, start);
     fire_flechette(ent, start, forward, damage, speed, kick);
 
-    gi.WriteByte(svc_muzzleflash);
-    gi.WriteShort(ent - g_edicts);
-    gi.WriteByte(MZ_ETF_RIFLE | is_silenced);
-    gi.multicast(ent->s.origin, MULTICAST_PVS);
+	if (ent->myskills.weapons[WEAPON_ETFRIFLE].mods[4].current_level < 1) {
+		gi.WriteByte(svc_muzzleflash);
+		gi.WriteShort(ent - g_edicts);
+		gi.WriteByte(MZ_ETF_RIFLE | is_silenced);
+		gi.multicast(ent->s.origin, MULTICAST_PVS);
 
-    PlayerNoise(ent, start, PNOISE_WEAPON);
+		PlayerNoise(ent, start, PNOISE_WEAPON);
+	}
+
     ent->client->vrr.gun_fire_time = level.time + 0.1;
     if (ent->client->buttons & BUTTON_ATTACK)
     {
@@ -3100,8 +3147,9 @@ static void PlasmaBeam_Fire(edict_t *ent)
     vec3_t start;
     vec3_t forward, right;
     vec3_t offset;
-    int damage;
-    int kick;
+    int damage = PLASMABEAM_INITIAL_DAMAGE +
+		( PLASMABEAM_ADDON_DAMAGE * ent->myskills.weapons[WEAPON_PLASMABEAM].mods[0].current_level );
+    int kick = 75;
     qboolean firing;
     qboolean has_ammo;
 
@@ -3112,7 +3160,9 @@ static void PlasmaBeam_Fire(edict_t *ent)
     {
         ent->client->ps.gunframe = 13;
         ent->client->weapon_sound = 0;
+#ifdef VRX_REPRO
         ent->client->ps.gunskin = 0;
+#endif
 
         if (firing && !has_ammo)
         {
@@ -3126,16 +3176,6 @@ static void PlasmaBeam_Fire(edict_t *ent)
         return;
     }
 
-    if (deathmatch->value)
-        damage = HEATBEAM_DM_DMG;
-    else
-        damage = HEATBEAM_SP_DMG;
-
-    if (deathmatch->value)
-        kick = 75;
-    else
-        kick = 30;
-
     if (ent->client->ps.gunframe > 12)
         ent->client->ps.gunframe = 8;
     else
@@ -3145,7 +3185,9 @@ static void PlasmaBeam_Fire(edict_t *ent)
         ent->client->ps.gunframe = 8;
 
     ent->client->weapon_sound = gi.soundindex("weapons/bfg__l1a.wav");
+#ifdef VRX_REPRO
     ent->client->ps.gunskin = 1;
+#endif //VRX_REPRO
 
     if (is_quad)
     {
@@ -3193,8 +3235,10 @@ void Weapon_Heatbeam(edict_t *ent)
     if (ent->client->weaponstate != WEAPON_FIRING)
     {
         ent->client->weapon_sound = 0;
+#ifdef VRX_REPRO
         ent->client->ps.gunskin = 0;
-    }
+#endif //VRX_REPRO
+	}
 
     Weapon_Generic(ent, 8, 12, 42, 47, pause_frames, fire_frames, PlasmaBeam_Fire);
 }

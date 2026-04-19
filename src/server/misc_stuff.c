@@ -349,6 +349,22 @@ void Check_full(edict_t *ent)
 			ent->client->pers.inventory[index] = ent->client->pers.max_slugs;
 	}
 
+	item = FindItem("Flechettes");
+	if (item)
+	{
+		index = ITEM_INDEX(item);
+		if (ent->client->pers.inventory[index] > ent->client->pers.max_flechettes)
+			ent->client->pers.inventory[index] = ent->client->pers.max_flechettes;
+	}
+
+	item = FindItem("Mag Slug");
+	if (item)
+	{
+		index = ITEM_INDEX(item);
+		if (ent->client->pers.inventory[index] > ent->client->pers.max_magslug)
+			ent->client->pers.inventory[index] = ent->client->pers.max_magslug;
+	}
+
 	item = FindItem("Rounds");
 	if (item)
 	{

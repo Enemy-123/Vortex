@@ -198,7 +198,7 @@ void ProjectOnPlane(vec3_t dst, const vec3_t p, const vec3_t normal)
 //FIXME: move to q_shared.c if this function is used elsewhere
 void CalculateDisplacement(vec3_t startAngles, vec3_t startPos, vec3_t endPos, float* horizontal, float* vertical)
 {
-	vec3_t v, xy_v, up;
+	vec3_t v = { 0, 0, 0 }, xy_v = { 0, 0, 0 }, up = { 0, 0, 0 };
 	VectorSubtract(endPos, startPos, v);
 	*vertical = v[2];
 	AngleVectors(startAngles, NULL, NULL, up);
@@ -419,31 +419,9 @@ qboolean AI_ClearWalkingPath(edict_t* self, vec3_t start, vec3_t end)
 	return true;
 }
 
-// converts the respawn_weapon index value (set in v_menu.c) to WEAP_* index
+// converts the respawn_weapon index value (set in v_menu.c) to WEAPON_* index
+// now is a no-op, respawn_weapon changed to be WEAPON_* values
 int AI_RespawnWeaponToWeapIndex(int respawn_weapon)
 {
-	if (respawn_weapon == 1)
-		return WEAP_SWORD;
-	else if (respawn_weapon == 11)
-		return WEAP_GRENADES;
-	else if (respawn_weapon == 13)
-		return WEAP_BLASTER;
-	else if (respawn_weapon == 14)
-		return WEAP_HYPERBLASTER; // Ionripper
-	else if (respawn_weapon == 15)
-		return WEAP_PLASMA; // Phalanx
-	else if (respawn_weapon == 16)
-		return WEAP_TRAP;
-	else if (respawn_weapon == 17)
-		return WEAP_MACHINEGUN; // ETF Rifle
-	else if (respawn_weapon == 18)
-		return WEAP_PLASMA; // Plasma Beam
-	else if (respawn_weapon == 19)
-		return WEAP_PROXLAUNCH;
-	else if (respawn_weapon == 20)
-		return WEAP_CHAINFIST;
-	else if (respawn_weapon == 21)
-		return WEAP_TRAP; // Tesla
-	else
-		return respawn_weapon - 1;
+		return respawn_weapon;
 }
