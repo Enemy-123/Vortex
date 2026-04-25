@@ -241,6 +241,7 @@ typedef enum {
 #define AI_PURSUE_PLAT_GOAL		0x00040000
 #define AI_DODGE				0x00080000
 #define AI_SNAP_TO_NAVI         0x00100000
+#define AI_ALTERNATE_FLY		0x00200000
 
 //monster attack state
 #define AS_STRAIGHT				1
@@ -629,7 +630,7 @@ typedef struct {
     vec3_t last_sighting; // last known position of enemy
     bool last_sighting_is_navi; // is the last known position of enemy a navigation point
 
-    //	int			attack_state;
+    int attack_state;
     int lefty;
     float idle_delay; // how often idle func is called
     int idle_frames; // number of frames monster has been idle
@@ -677,6 +678,22 @@ typedef struct {
     //	qboolean	melee;				// whether or not the monster should circle strafe
     dmglist_t dmglist[MAX_CLIENTS]; // keep track of damage by players
     qboolean slots_freed; // true if player slots have been refunded prior to removal
+
+    // Remaster-style alternate flying mechanics.
+    float fly_max_distance;
+    float fly_min_distance;
+    float fly_acceleration;
+    float fly_speed;
+    vec3_t fly_ideal_position;
+    float fly_position_time;
+    qboolean fly_buzzard;
+    qboolean fly_above;
+    qboolean fly_pinned;
+    qboolean fly_thrusters;
+    float fly_recovery_time;
+    vec3_t fly_recovery_dir;
+    float fly_wall_stuck_time;
+    float fly_separation_time;
 
     // az begin
 
@@ -2801,6 +2818,9 @@ void Check_full(edict_t *ent);
 
 void MonsterAim(edict_t *self, float accuracy, int projectile_speed, qboolean rocket, int flash_number, vec3_t forward,
                 vec3_t start);
+qboolean M_MonsterHasCombatSight(edict_t *self, edict_t *other);
+qboolean M_MonsterHasClearShotFrom(edict_t *self, vec3_t start);
+void M_MonsterBlockedShot(edict_t *self, float delay);
 
 float entdist(const edict_t *ent1, const edict_t *ent2);
 

@@ -29,6 +29,15 @@ static void daedalus_run(edict_t *self);
 static void daedalus_reattack(edict_t *self);
 static void daedalus_fire_grenade(edict_t *self);
 
+static void daedalus_set_fly_parameters(edict_t *self)
+{
+	self->monsterinfo.fly_thrusters = false;
+	self->monsterinfo.fly_acceleration = 20.0f;
+	self->monsterinfo.fly_speed = 120.0f;
+	self->monsterinfo.fly_min_distance = 250.0f;
+	self->monsterinfo.fly_max_distance = 450.0f;
+}
+
 static void daedalus_sight(edict_t *self, edict_t *other)
 {
 	gi.sound(self, CHAN_VOICE, sound_sight, 1, ATTN_NORM, 0);
@@ -71,10 +80,18 @@ mframe_t daedalus_frames_attack[] =
 };
 mmove_t daedalus_move_attack = { FRAME_attak104, FRAME_attak106, daedalus_frames_attack, NULL };
 
+mframe_t daedalus_frames_attack_slide[] =
+{
+	ai_charge, 10, daedalus_fire_grenade,
+	ai_charge, 10, daedalus_fire_grenade,
+	ai_charge, 10, daedalus_reattack
+};
+mmove_t daedalus_move_attack_slide = { FRAME_attak104, FRAME_attak106, daedalus_frames_attack_slide, NULL };
+
 mframe_t daedalus_frames_end_attack[] =
 {
-	drone_ai_run, 15, NULL,
-	drone_ai_run, 15, NULL
+	ai_charge, 1, NULL,
+	ai_charge, 1, NULL
 };
 mmove_t daedalus_move_end_attack = { FRAME_attak107, FRAME_attak108, daedalus_frames_end_attack, daedalus_run };
 
@@ -103,12 +120,17 @@ static void daedalus_fire_grenade(edict_t *self)
 
 	flash_number = MZ2_GUNCMDR_GRENADE_MORTAR_1;
 	MonsterAim(self, M_PROJECTILE_ACC, speed, false, -1, forward, start);
+	if (!M_MonsterHasClearShotFrom(self, start))
+	{
+		M_MonsterBlockedShot(self, 0.4f);
+		return;
+	}
 	monster_fire_grenade(self, start, forward, damage, speed, flash_number);
 }
 
 static void daedalus_reattack(edict_t *self)
 {
-	if (G_ValidTarget(self, self->enemy, true, true) && random() <= 0.65)
+	if (G_ValidTarget(self, self->enemy, true, true) && random() <= 0.4)
 	{
 		self->s.frame = FRAME_attak104;
 		return;
@@ -121,7 +143,18 @@ static void daedalus_reattack(edict_t *self)
 
 static void daedalus_attack(edict_t *self)
 {
-	self->monsterinfo.currentmove = &daedalus_move_attack;
+	if (random() < 0.65f)
+	{
+		self->monsterinfo.attack_state = AS_STRAIGHT;
+		self->monsterinfo.currentmove = &daedalus_move_attack;
+	}
+	else
+	{
+		if (random() <= 0.5f)
+			self->monsterinfo.lefty = 1 - self->monsterinfo.lefty;
+		self->monsterinfo.attack_state = AS_SLIDING;
+		self->monsterinfo.currentmove = &daedalus_move_attack_slide;
+	}
 }
 
 static void daedalus_pain(edict_t *self, edict_t *other, float kick, int damage)
@@ -224,6 +257,8 @@ void init_drone_daedalus(edict_t *self)
 
 	self->mtype = M_DAEDALUS;
 	self->flags |= FL_FLY;
+	self->monsterinfo.aiflags |= AI_ALTERNATE_FLY;
+	daedalus_set_fly_parameters(self);
 	self->monsterinfo.power_armor_power = M_DAEDALUS_INITIAL_ARMOR + M_DAEDALUS_ADDON_ARMOR * self->monsterinfo.level;
 	self->monsterinfo.power_armor_type = POWER_ARMOR_SHIELD;
 	self->monsterinfo.max_armor = self->monsterinfo.power_armor_power;

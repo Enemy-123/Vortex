@@ -406,6 +406,664 @@ qboolean M_MoveVertical(edict_t* ent, vec3_t dest, vec3_t neworg)
 	}
 	return false;
 }
+
+#define FLY_POSITION_UPDATE_MIN			3.0f
+#define FLY_POSITION_UPDATE_MAX			10.0f
+#define FLY_TURN_FACTOR_FAST			0.45f
+#define FLY_TURN_FACTOR_BASE			0.84f
+#define FLY_TURN_FACTOR_SPEED_SCALE		0.08f
+#define FLY_PITCH_LERP_SPEED			4.0f
+#define FLY_WALL_STUCK_THRESHOLD		1.5f
+#define FLY_DESCENT_SPEED_MULTIPLIER	0.6f
+#define FLY_TARGET_LEAD_TIME			0.45f
+#define FLY_CATCHUP_MARGIN				32.0f
+#define FLY_CATCHUP_DISTANCE_SCALE		0.85f
+#define FLY_ATTACK_DISTANCE_FRACTION	0.2f
+#define FLY_ATTACK_SPEED_SCALE			1.35f
+#define FLY_ATTACK_ACCEL_SCALE			1.6f
+#define FLY_ATTACK_STRAFE_SPEED_SCALE	0.6f
+#define FLY_ATTACK_DRIFT_SPEED_SCALE	0.3f
+#define FLY_ATTACK_STRAFE_MIN			32.0f
+#define FLY_ATTACK_STRAFE_MAX			128.0f
+#define FLY_TARGET_STRAFE_MIN_SPEED		20.0f
+#define FLY_TARGET_STRAFE_DISTANCE_SCALE	0.45f
+#define FLY_COMBAT_MIN_HEIGHT			48.0f
+#define FLY_COMBAT_HEIGHT_ABOVE_VIEW	24.0f
+#define FLY_BLOCKED_DESCENT_HEIGHT		32.0f
+#define FLY_BLOCKED_DESCENT_XY_SCALE	0.45f
+
+static float fly_frand_range(float min_value, float max_value)
+{
+	return min_value + random() * (max_value - min_value);
+}
+
+static float fly_clampf(float value, float min_value, float max_value)
+{
+	if (value < min_value)
+		return min_value;
+	if (value > max_value)
+		return max_value;
+	return value;
+}
+
+static void fly_scale_add(vec3_t out, vec3_t a, float ascale, vec3_t b, float bscale)
+{
+	out[0] = a[0] * ascale + b[0] * bscale;
+	out[1] = a[1] * ascale + b[1] * bscale;
+	out[2] = a[2] * ascale + b[2] * bscale;
+}
+
+static qboolean fly_vector_valid(vec3_t v)
+{
+	return isfinite(v[0]) && isfinite(v[1]) && isfinite(v[2]);
+}
+
+static qboolean fly_following_path(edict_t *ent)
+{
+	if (ent->monsterinfo.aiflags & (AI_FIND_NAVI | AI_COMBAT_POINT | AI_LOST_SIGHT))
+		return true;
+
+	if (ent->goalentity && ent->goalentity->inuse)
+	{
+		if (ent->goalentity->mtype == INVASION_NAVI || ent->goalentity->mtype == PLAYER_NAVI ||
+			ent->goalentity->mtype == INVASION_PLAYERSPAWN)
+			return true;
+	}
+
+	if (ent->enemy && ent->enemy->inuse && invasion->value && ent->enemy->mtype == INVASION_PLAYERSPAWN)
+		return true;
+
+	return false;
+}
+
+static qboolean fly_has_visible_combat_enemy(edict_t *ent)
+{
+	if (!ent->enemy || !ent->enemy->inuse)
+		return false;
+
+	if (invasion->value && ent->enemy->mtype == INVASION_PLAYERSPAWN)
+		return false;
+
+	if (!M_MonsterHasCombatSight(ent, ent->enemy))
+		return false;
+
+	ent->monsterinfo.aiflags &= ~AI_LOST_SIGHT;
+	ent->monsterinfo.search_frames = 0;
+	VectorCopy(ent->enemy->s.origin, ent->monsterinfo.last_sighting);
+	return true;
+}
+
+static qboolean fly_has_recent_combat_enemy(edict_t *ent)
+{
+	if (fly_has_visible_combat_enemy(ent))
+		return true;
+
+	if (!ent->enemy || !ent->enemy->inuse)
+		return false;
+
+	if (invasion->value && ent->enemy->mtype == INVASION_PLAYERSPAWN)
+		return false;
+
+	if (ent->monsterinfo.aiflags & AI_LOST_SIGHT)
+		return false;
+
+	return ent->monsterinfo.search_frames <= 3;
+}
+
+static qboolean fly_has_lost_combat_goal(edict_t *ent, vec3_t dest)
+{
+	if (!ent->enemy || !ent->enemy->inuse)
+		return false;
+
+	if (invasion->value && ent->enemy->mtype == INVASION_PLAYERSPAWN)
+		return false;
+
+	if (!(ent->monsterinfo.aiflags & AI_LOST_SIGHT))
+		return false;
+
+	if (dest)
+		return true;
+
+	if (!VectorCompare(ent->monsterinfo.last_sighting, vec3_origin))
+		return true;
+
+	return ent->goalentity && ent->goalentity->inuse && ent->goalentity == ent->enemy;
+}
+
+static qboolean fly_use_alternate_step(edict_t *ent, vec3_t dest)
+{
+	if (!(ent->monsterinfo.aiflags & AI_ALTERNATE_FLY))
+		return false;
+
+	if (!fly_has_recent_combat_enemy(ent) && !fly_has_lost_combat_goal(ent, dest))
+		return false;
+
+	// Invasion destination movement is used by navis/base pathing and expects an immediate origin step.
+	if (dest && invasion->value && !fly_has_lost_combat_goal(ent, dest))
+		return false;
+
+	return true;
+}
+
+static void fly_reset_alternate_step(edict_t *ent)
+{
+	VectorClear(ent->velocity);
+	ent->monsterinfo.fly_pinned = false;
+	ent->monsterinfo.fly_wall_stuck_time = 0.0f;
+}
+
+static qboolean fly_has_last_sighting(edict_t *ent)
+{
+	return !VectorCompare(ent->monsterinfo.last_sighting, vec3_origin);
+}
+
+static void fly_face_target(edict_t *ent, vec3_t target_origin)
+{
+	vec3_t target_dir;
+
+	VectorSubtract(target_origin, ent->s.origin, target_dir);
+	if (VectorNormalize(target_dir) <= 0.1f)
+		return;
+
+	ent->ideal_yaw = vectoyaw(target_dir);
+	M_ChangeYaw(ent);
+}
+
+static void G_IdealHoverPosition(edict_t *ent, vec3_t out)
+{
+	float theta, phi, distance_scale;
+	vec3_t direction;
+
+	VectorClear(out);
+
+	if ((!ent->enemy && !(ent->monsterinfo.aiflags & AI_MEDIC)) ||
+		(fly_following_path(ent) && !fly_has_visible_combat_enemy(ent)))
+		return;
+
+	theta = random() * M_PI * 2.0f;
+	if (ent->monsterinfo.fly_above)
+		phi = acosf(0.7f + random() * 0.3f);
+	else if (ent->monsterinfo.fly_buzzard || (ent->monsterinfo.aiflags & AI_MEDIC))
+		phi = acosf(random());
+	else
+		phi = acosf(random() * 0.7f);
+
+	VectorSet(direction, sinf(phi) * cosf(theta), sinf(phi) * sinf(theta), cosf(phi));
+
+	distance_scale = fly_frand_range(ent->monsterinfo.fly_min_distance, ent->monsterinfo.fly_max_distance);
+	VectorScale(direction, distance_scale, out);
+}
+
+static qboolean fly_adjust_visible_combat_goal(edict_t *ent, vec3_t target_origin, vec3_t target_velocity, vec3_t wanted_pos)
+{
+	float current_dist, min_dist, max_dist, desired_dist, attack_dist, radial_speed, catchup_step, strafe_dist, min_height;
+	float target_lateral_speed, target_lateral_speed_abs;
+	qboolean attack_drive, sliding_attack, force_drive;
+	vec3_t away, ideal_offset, predicted_target, lateral;
+
+	if (!fly_has_recent_combat_enemy(ent) || ent->monsterinfo.fly_pinned)
+		return false;
+
+	VectorSubtract(ent->s.origin, target_origin, away);
+	current_dist = VectorNormalize(away);
+	if (current_dist <= 0.1f)
+		return false;
+
+	min_dist = max(0.0f, ent->monsterinfo.fly_min_distance);
+	max_dist = max(min_dist, ent->monsterinfo.fly_max_distance);
+	desired_dist = current_dist;
+	attack_dist = fly_clampf(min_dist + ((max_dist - min_dist) * FLY_ATTACK_DISTANCE_FRACTION), min_dist, max_dist);
+	attack_drive = (ent->monsterinfo.attack_state == AS_STRAIGHT || ent->monsterinfo.attack_state == AS_SLIDING);
+	sliding_attack = (ent->monsterinfo.attack_state == AS_SLIDING);
+	force_drive = false;
+
+	if (current_dist > max_dist + FLY_CATCHUP_MARGIN)
+	{
+		if (attack_drive)
+			desired_dist = attack_dist;
+		else
+			desired_dist = max(min_dist, max_dist * FLY_CATCHUP_DISTANCE_SCALE);
+		force_drive = true;
+	}
+	else
+	{
+		radial_speed = DotProduct(ent->velocity, away) - DotProduct(target_velocity, away);
+		if (radial_speed > 8.0f && current_dist > min_dist + FLY_CATCHUP_MARGIN)
+		{
+			catchup_step = max(FLY_CATCHUP_MARGIN, ent->monsterinfo.fly_speed * 0.35f);
+			if (attack_drive)
+				desired_dist = attack_dist;
+			else
+				desired_dist = fly_clampf(current_dist - catchup_step, min_dist, max_dist);
+			force_drive = true;
+		}
+		else if (attack_drive)
+		{
+			desired_dist = attack_dist;
+			force_drive = true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	VectorScale(away, desired_dist, ideal_offset);
+
+	if (attack_drive && !(ent->flags & FL_SWIM))
+	{
+		min_height = FLY_COMBAT_MIN_HEIGHT;
+		if (ent->enemy && ent->enemy->viewheight > 0)
+			min_height = max(min_height, ent->enemy->viewheight + FLY_COMBAT_HEIGHT_ABOVE_VIEW);
+		if (ideal_offset[2] < min_height)
+			ideal_offset[2] = min_height;
+	}
+
+	if (attack_drive)
+	{
+		VectorSet(lateral, -away[1], away[0], 0.0f);
+		if (VectorNormalize(lateral) > 0.1f)
+		{
+			target_lateral_speed = DotProduct(target_velocity, lateral);
+			target_lateral_speed_abs = fabs(target_lateral_speed);
+
+			if (target_lateral_speed_abs > FLY_TARGET_STRAFE_MIN_SPEED)
+			{
+				if (target_lateral_speed < 0.0f)
+					VectorNegate(lateral, lateral);
+				strafe_dist = fly_clampf(target_lateral_speed_abs * FLY_TARGET_STRAFE_DISTANCE_SCALE,
+					FLY_ATTACK_STRAFE_MIN, FLY_ATTACK_STRAFE_MAX);
+			}
+			else
+			{
+				if (!ent->monsterinfo.lefty)
+					VectorNegate(lateral, lateral);
+				strafe_dist = fly_clampf(ent->monsterinfo.fly_speed *
+					(sliding_attack ? FLY_ATTACK_STRAFE_SPEED_SCALE : FLY_ATTACK_DRIFT_SPEED_SCALE),
+					FLY_ATTACK_STRAFE_MIN, FLY_ATTACK_STRAFE_MAX);
+			}
+
+			VectorMA(ideal_offset, strafe_dist, lateral, ideal_offset);
+		}
+	}
+
+	VectorMA(target_origin, FLY_TARGET_LEAD_TIME, target_velocity, predicted_target);
+	VectorAdd(predicted_target, ideal_offset, wanted_pos);
+	VectorCopy(ideal_offset, ent->monsterinfo.fly_ideal_position);
+
+	if (ent->monsterinfo.fly_position_time > level.time + 0.5f)
+		ent->monsterinfo.fly_position_time = level.time + 0.5f;
+
+	return force_drive;
+}
+
+qboolean SV_flystep_testvisposition(vec3_t start, vec3_t end, vec3_t starta, vec3_t startb, edict_t* ent)
+{
+	trace_t tr;
+
+	tr = gi.trace(start, NULL, NULL, end, ent, MASK_SOLID | CONTENTS_MONSTERCLIP);
+	if (tr.fraction == 1.0f)
+	{
+		tr = gi.trace(starta, ent->mins, ent->maxs, startb, ent, MASK_SOLID | CONTENTS_MONSTERCLIP);
+		if (tr.fraction == 1.0f)
+			return true;
+	}
+
+	return false;
+}
+
+qboolean SV_alternate_flystep(edict_t* ent, vec3_t dest, vec3_t move, qboolean relink)
+{
+	vec3_t dir, towards_origin, towards_velocity, wanted_pos, dest_diff, wanted_dir, final_dir;
+	vec3_t trace_end, aim_fwd, aim_rgt, aim_up, yaw_angles;
+	vec3_t box_mins, box_maxs;
+	trace_t tr;
+	float current_speed, dist_to_wanted, turn_factor, base_fly_speed, accel, speed_factor, wanted_speed;
+	qboolean following_paths, have_target, bad_movement_direction, visible_combat_enemy, catchup_goal, combat_attack_drive;
+
+	(void)move;
+	(void)relink;
+
+	if ((ent->flags & FL_SWIM) && ent->waterlevel < WATER_WAIST)
+		return true;
+
+	if (ent->monsterinfo.fly_speed <= 0.0f || ent->monsterinfo.fly_acceleration <= 0.0f)
+		return false;
+
+	if (ent->monsterinfo.fly_max_distance < ent->monsterinfo.fly_min_distance)
+		ent->monsterinfo.fly_max_distance = ent->monsterinfo.fly_min_distance;
+
+	if (ent->monsterinfo.fly_position_time <= level.time ||
+		(ent->enemy && ent->monsterinfo.fly_pinned && !visible(ent, ent->enemy)) ||
+		(ent->enemy && VectorCompare(ent->monsterinfo.fly_ideal_position, vec3_origin)))
+	{
+		ent->monsterinfo.fly_pinned = false;
+		ent->monsterinfo.fly_position_time = level.time + fly_frand_range(FLY_POSITION_UPDATE_MIN, FLY_POSITION_UPDATE_MAX);
+		G_IdealHoverPosition(ent, ent->monsterinfo.fly_ideal_position);
+	}
+
+	VectorCopy(ent->velocity, dir);
+	current_speed = VectorNormalize(dir);
+	if (current_speed < 0.1f)
+		VectorClear(dir);
+
+	VectorClear(towards_origin);
+	VectorClear(towards_velocity);
+	visible_combat_enemy = fly_has_recent_combat_enemy(ent);
+	following_paths = fly_following_path(ent) && !visible_combat_enemy;
+	have_target = false;
+
+	if (dest)
+	{
+		VectorCopy(dest, towards_origin);
+		following_paths = true;
+		have_target = true;
+	}
+	else if (following_paths)
+	{
+		if (ent->goalentity && ent->goalentity->inuse)
+		{
+			VectorCopy(ent->goalentity->s.origin, towards_origin);
+			have_target = true;
+		}
+		else if (fly_has_last_sighting(ent))
+		{
+			VectorCopy(ent->monsterinfo.last_sighting, towards_origin);
+			have_target = true;
+		}
+	}
+	else if (ent->enemy && ent->enemy->inuse)
+	{
+		VectorCopy(ent->enemy->s.origin, towards_origin);
+		VectorCopy(ent->enemy->velocity, towards_velocity);
+		have_target = true;
+	}
+	else if (ent->goalentity && ent->goalentity->inuse && ent->goalentity != world)
+	{
+		VectorCopy(ent->goalentity->s.origin, towards_origin);
+		have_target = true;
+	}
+	if (!have_target)
+	{
+		accel = ent->monsterinfo.fly_acceleration;
+		if (current_speed > 0.0f)
+			current_speed = max(0.0f, current_speed - accel);
+
+		if (current_speed > 0.0f)
+			VectorScale(dir, current_speed, ent->velocity);
+		else
+			VectorClear(ent->velocity);
+		return true;
+	}
+
+	if (ent->monsterinfo.fly_pinned)
+		VectorCopy(ent->monsterinfo.fly_ideal_position, wanted_pos);
+	else if (following_paths)
+		VectorCopy(towards_origin, wanted_pos);
+	else
+	{
+		VectorMA(towards_origin, FLY_TARGET_LEAD_TIME, towards_velocity, wanted_pos);
+		VectorAdd(wanted_pos, ent->monsterinfo.fly_ideal_position, wanted_pos);
+	}
+	catchup_goal = fly_adjust_visible_combat_goal(ent, towards_origin, towards_velocity, wanted_pos);
+
+	VectorSet(box_mins, -8.0f, -8.0f, -8.0f);
+	VectorSet(box_maxs, 8.0f, 8.0f, 8.0f);
+	tr = gi.trace(towards_origin, box_mins, box_maxs, wanted_pos, ent, MASK_SOLID | CONTENTS_MONSTERCLIP);
+	if (!tr.allsolid)
+		VectorCopy(tr.endpos, wanted_pos);
+	VectorSubtract(wanted_pos, ent->s.origin, dest_diff);
+	if (dest_diff[2] > ent->mins[2] && dest_diff[2] < ent->maxs[2])
+		dest_diff[2] = 0.0f;
+
+	VectorCopy(dest_diff, wanted_dir);
+	dist_to_wanted = VectorNormalize(wanted_dir);
+
+	if (visible_combat_enemy)
+	{
+		fly_face_target(ent, ent->enemy->s.origin);
+		M_ChangeYaw(ent);
+	}
+	else
+	{
+		fly_face_target(ent, towards_origin);
+		M_ChangeYaw(ent);
+	}
+
+	if (dist_to_wanted > 0.1f)
+	{
+		VectorMA(ent->s.origin, ent->monsterinfo.fly_acceleration, wanted_dir, trace_end);
+		tr = gi.trace(ent->s.origin, ent->mins, ent->maxs, trace_end, ent, MASK_SOLID | CONTENTS_MONSTERCLIP);
+	}
+	else
+	{
+		tr.fraction = 1.0f;
+	}
+
+	VectorSet(yaw_angles, 0.0f, ent->s.angles[YAW], 0.0f);
+	AngleVectors(yaw_angles, aim_fwd, aim_rgt, aim_up);
+
+	if (tr.fraction < 0.25f && dist_to_wanted > 0.1f)
+	{
+		vec3_t bottom_pos, top_pos, startb, floor_check, side_offset, lateral_offset, left_start, right_start, obstacle_normal;
+		qboolean bottom_visible, top_visible, left_visible, right_visible, force_descent;
+
+		if (ent->monsterinfo.fly_wall_stuck_time == 0.0f)
+			ent->monsterinfo.fly_wall_stuck_time = level.time;
+
+		VectorCopy(tr.plane.normal, obstacle_normal);
+
+		VectorCopy(ent->s.origin, bottom_pos);
+		bottom_pos[2] += ent->mins[2];
+		VectorCopy(ent->s.origin, top_pos);
+		top_pos[2] += ent->maxs[2];
+
+		VectorCopy(ent->s.origin, startb);
+		startb[2] += ent->mins[2] - ent->monsterinfo.fly_acceleration;
+		bottom_visible = SV_flystep_testvisposition(bottom_pos, wanted_pos, ent->s.origin, startb, ent);
+
+		VectorCopy(top_pos, startb);
+		startb[2] += ent->monsterinfo.fly_acceleration;
+		top_visible = SV_flystep_testvisposition(top_pos, wanted_pos, ent->s.origin, startb, ent);
+
+		force_descent = false;
+		if ((following_paths || visible_combat_enemy) &&
+			ent->s.origin[2] > towards_origin[2] + FLY_BLOCKED_DESCENT_HEIGHT)
+		{
+			ent->monsterinfo.fly_position_time = 0.0f;
+			ent->monsterinfo.fly_pinned = false;
+			force_descent = true;
+			wanted_dir[0] *= FLY_BLOCKED_DESCENT_XY_SCALE;
+			wanted_dir[1] *= FLY_BLOCKED_DESCENT_XY_SCALE;
+			wanted_dir[2] = -FLY_DESCENT_SPEED_MULTIPLIER;
+			VectorNormalize(wanted_dir);
+		}
+		else if (level.time > ent->monsterinfo.fly_wall_stuck_time + FLY_WALL_STUCK_THRESHOLD)
+		{
+			VectorCopy(ent->s.origin, floor_check);
+			floor_check[2] -= 512.0f;
+			tr = gi.trace(ent->s.origin, ent->mins, ent->maxs, floor_check, ent, MASK_SOLID | CONTENTS_MONSTERCLIP);
+			if (tr.fraction < 1.0f)
+			{
+				ent->monsterinfo.fly_position_time = 0.0f;
+				ent->monsterinfo.fly_pinned = false;
+				force_descent = true;
+				wanted_dir[0] *= 0.3f;
+				wanted_dir[1] *= 0.3f;
+				wanted_dir[2] = -FLY_DESCENT_SPEED_MULTIPLIER;
+				VectorNormalize(wanted_dir);
+			}
+		}
+
+		if (!force_descent)
+		{
+			if (bottom_visible == top_visible)
+			{
+				side_offset[0] = aim_fwd[0] * ent->maxs[0];
+				side_offset[1] = aim_fwd[1] * ent->maxs[1];
+				side_offset[2] = aim_fwd[2] * ent->maxs[2];
+				lateral_offset[0] = aim_rgt[0] * ent->maxs[0];
+				lateral_offset[1] = aim_rgt[1] * ent->maxs[1];
+				lateral_offset[2] = aim_rgt[2] * ent->maxs[2];
+
+				VectorAdd(ent->s.origin, side_offset, left_start);
+				VectorSubtract(left_start, lateral_offset, left_start);
+				VectorAdd(ent->s.origin, side_offset, right_start);
+				VectorAdd(right_start, lateral_offset, right_start);
+
+				left_visible = gi.trace(left_start, NULL, NULL, wanted_pos, ent, MASK_SOLID | CONTENTS_MONSTERCLIP).fraction == 1.0f;
+				right_visible = gi.trace(right_start, NULL, NULL, wanted_pos, ent, MASK_SOLID | CONTENTS_MONSTERCLIP).fraction == 1.0f;
+
+				if (left_visible != right_visible)
+				{
+					if (right_visible)
+						VectorAdd(wanted_dir, aim_rgt, wanted_dir);
+					else
+						VectorSubtract(wanted_dir, aim_rgt, wanted_dir);
+				}
+				else
+				{
+					VectorCopy(obstacle_normal, wanted_dir);
+					wanted_dir[2] -= 0.2f;
+				}
+			}
+			else
+			{
+				if (top_visible)
+					VectorAdd(wanted_dir, aim_up, wanted_dir);
+				else
+					VectorSubtract(wanted_dir, aim_up, wanted_dir);
+			}
+			VectorNormalize(wanted_dir);
+		}
+	}
+	else
+	{
+		ent->monsterinfo.fly_wall_stuck_time = 0.0f;
+	}
+
+	bad_movement_direction = false;
+	if (dist_to_wanted > 0.1f)
+	{
+		vec3_t contents_test;
+		VectorMA(ent->s.origin, max(current_speed, ent->monsterinfo.fly_speed) * FRAMETIME, wanted_dir, contents_test);
+		if ((ent->flags & FL_FLY) && ent->waterlevel < 3)
+			bad_movement_direction = (gi.pointcontents(contents_test) & MASK_WATER) != 0;
+		else if (ent->flags & FL_SWIM)
+			bad_movement_direction = (gi.pointcontents(contents_test) & MASK_WATER) == 0;
+	}
+
+	if (bad_movement_direction)
+	{
+		if (ent->monsterinfo.fly_recovery_time < level.time)
+		{
+			VectorSet(ent->monsterinfo.fly_recovery_dir, crandom(), crandom(), crandom());
+			if (VectorNormalize(ent->monsterinfo.fly_recovery_dir) < 0.1f)
+				VectorSet(ent->monsterinfo.fly_recovery_dir, 0.0f, 0.0f, 1.0f);
+			ent->monsterinfo.fly_recovery_time = level.time + 1.0f;
+		}
+		VectorCopy(ent->monsterinfo.fly_recovery_dir, wanted_dir);
+	}
+
+	if (dir[0] || dir[1] || dir[2])
+	{
+		float dir_dot = DotProduct(dir, wanted_dir);
+
+		if (catchup_goal && dir_dot < 0.0f)
+		{
+			VectorCopy(wanted_dir, final_dir);
+		}
+		else if (catchup_goal && dir_dot < 0.7f)
+		{
+			turn_factor = 0.2f;
+			fly_scale_add(final_dir, dir, turn_factor, wanted_dir, 1.0f - turn_factor);
+			if (VectorNormalize(final_dir) < 0.1f)
+				VectorCopy(wanted_dir, final_dir);
+		}
+		else if (((ent->monsterinfo.fly_thrusters && !ent->monsterinfo.fly_pinned) || following_paths) &&
+			DotProduct(dir, wanted_dir) > 0.0f)
+		{
+			turn_factor = FLY_TURN_FACTOR_FAST;
+			fly_scale_add(final_dir, dir, turn_factor, wanted_dir, 1.0f - turn_factor);
+			if (VectorNormalize(final_dir) < 0.1f)
+				VectorCopy(wanted_dir, final_dir);
+		}
+		else
+		{
+			turn_factor = min(1.0f, FLY_TURN_FACTOR_BASE +
+				(FLY_TURN_FACTOR_SPEED_SCALE * (current_speed / ent->monsterinfo.fly_speed)));
+			fly_scale_add(final_dir, dir, turn_factor, wanted_dir, 1.0f - turn_factor);
+			if (VectorNormalize(final_dir) < 0.1f)
+				VectorCopy(wanted_dir, final_dir);
+		}
+	}
+	else
+	{
+		VectorCopy(wanted_dir, final_dir);
+	}
+
+	base_fly_speed = ent->monsterinfo.fly_speed;
+	accel = ent->monsterinfo.fly_acceleration;
+	combat_attack_drive = visible_combat_enemy &&
+		(ent->monsterinfo.attack_state == AS_STRAIGHT || ent->monsterinfo.attack_state == AS_SLIDING);
+	if (combat_attack_drive)
+	{
+		base_fly_speed *= FLY_ATTACK_SPEED_SCALE;
+		accel *= FLY_ATTACK_ACCEL_SCALE;
+	}
+
+	if (!ent->enemy || (ent->monsterinfo.fly_thrusters && !ent->monsterinfo.fly_pinned) || following_paths || catchup_goal)
+	{
+		if (following_paths && (dir[0] || dir[1] || dir[2]) && DotProduct(wanted_dir, dir) < -0.25f)
+			speed_factor = 0.0f;
+		else
+			speed_factor = 1.0f;
+	}
+	else
+	{
+		speed_factor = min(1.0f, dist_to_wanted / base_fly_speed);
+	}
+
+	if (bad_movement_direction)
+		speed_factor = -speed_factor;
+
+	if (DotProduct(final_dir, wanted_dir) < 0.25f)
+		accel *= 2.0f;
+
+	wanted_speed = base_fly_speed * speed_factor;
+	if (current_speed > wanted_speed)
+		current_speed = max(wanted_speed, current_speed - accel);
+	else if (current_speed < wanted_speed)
+		current_speed = min(wanted_speed, current_speed + accel);
+
+	if (!fly_vector_valid(final_dir) || !isfinite(current_speed))
+		return false;
+
+	VectorScale(final_dir, current_speed, ent->velocity);
+
+	if (ent->enemy && (ent->monsterinfo.fly_buzzard || (ent->monsterinfo.aiflags & AI_MEDIC)))
+	{
+		vec3_t pitch_dir, pitch_angles, pitch_target;
+		if (visible_combat_enemy)
+			VectorCopy(ent->enemy->s.origin, pitch_target);
+		else
+			VectorCopy(towards_origin, pitch_target);
+
+		VectorSubtract(ent->s.origin, pitch_target, pitch_dir);
+		if (VectorNormalize(pitch_dir) > 0.1f)
+		{
+			vectoangles(pitch_dir, pitch_angles);
+			ent->s.angles[PITCH] = LerpAngle(ent->s.angles[PITCH], -pitch_angles[PITCH], FRAMETIME * FLY_PITCH_LERP_SPEED);
+		}
+	}
+	else
+	{
+		ent->s.angles[PITCH] = 0.0f;
+	}
+
+	return true;
+}
+
 qboolean M_FlyMove(edict_t* ent, vec3_t dest, vec3_t move, qboolean relink)
 {
 	//float        dz;                        // delta Z
@@ -413,6 +1071,20 @@ qboolean M_FlyMove(edict_t* ent, vec3_t dest, vec3_t move, qboolean relink)
 	float        zSpeed = 8;        // Z movement speed
 	trace_t        trace;
 	vec3_t        neworg1, neworg2;
+
+	if (ent->monsterinfo.aiflags & AI_ALTERNATE_FLY)
+	{
+		if (fly_use_alternate_step(ent, dest))
+		{
+			// Once a flyer has visible combat contact, let the alternate
+			// fly logic steer by enemy/hover offset instead of parking on path nodes.
+			if (SV_alternate_flystep(ent, NULL, move, relink))
+				return true;
+		}
+
+		fly_reset_alternate_step(ent);
+	}
+
 	if (!M_MoveVertical(ent, dest, neworg1))
 	{
 		//gi.dprintf("movevertical failed\n");
@@ -485,6 +1157,19 @@ qboolean SV_movestep(edict_t* ent, vec3_t dest, vec3_t move, qboolean relink)
 	{
 		if (ent->flags & FL_FLY)
 			return M_FlyMove(ent, dest, move, relink);
+
+		if (fly_use_alternate_step(ent, dest))
+		{
+			if (SV_alternate_flystep(ent, NULL, move, relink))
+				return true;
+
+			fly_reset_alternate_step(ent);
+		}
+		else if (ent->monsterinfo.aiflags & AI_ALTERNATE_FLY)
+		{
+			fly_reset_alternate_step(ent);
+		}
+
 		//	gi.dprintf("trying to swim\n");
 		// try one move with vertical motion, then one without
 		for (i = 0; i < 2; i++)

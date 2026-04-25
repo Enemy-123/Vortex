@@ -201,6 +201,7 @@ void ai_charge (edict_t *self, float dist)
 {
 	edict_t *target;
 	vec3_t	v;
+	float	ofs;
 
 	if (!self || !self->inuse)
 		return;
@@ -245,6 +246,26 @@ void ai_charge (edict_t *self, float dist)
 	VectorSubtract (self->enemy->s.origin, self->s.origin, v);
 	self->ideal_yaw = vectoyaw(v);
 	M_ChangeYaw (self);
+
+	if (self->monsterinfo.aiflags & AI_ALTERNATE_FLY)
+	{
+		if (self->monsterinfo.attack_state == AS_SLIDING)
+		{
+			ofs = self->monsterinfo.lefty ? 90 : -90;
+			if (M_walkmove(self, self->ideal_yaw + ofs, dist))
+				return;
+
+			self->monsterinfo.lefty = 1 - self->monsterinfo.lefty;
+			M_walkmove(self, self->ideal_yaw - ofs, dist);
+		}
+		else
+		{
+			M_walkmove(self, self->s.angles[YAW], dist);
+		}
+	}
+
+	if (entdist(self, self->enemy) <= MELEE_DISTANCE * 2.5f)
+		M_ChangeYaw(self);
 }
 
 /*
@@ -257,11 +278,13 @@ Strafe sideways, but stay at aproximately the same range
 void ai_run_slide(edict_t *self, float distance)
 {
 	float	ofs;
+	vec3_t	v;
 
 	if (!self->enemy)
 		return;
 
-	self->ideal_yaw = self->enemy->s.angles[YAW];
+	VectorSubtract (self->enemy->s.origin, self->s.origin, v);
+	self->ideal_yaw = vectoyaw(v);
 	M_ChangeYaw (self);
 
 	if (self->monsterinfo.lefty)
@@ -890,7 +913,7 @@ void drone_ai_stand (edict_t *self, float dist)
 	if (DRONE_DEBUG)
 		gi.dprintf("drone_ai_stand()\n");
 	// used for slight position adjustments for animations
-	if (dist)
+	if (dist || (self->monsterinfo.aiflags & AI_ALTERNATE_FLY))
 		M_walkmove(self, self->s.angles[YAW], dist);
 
 	if (!self->enemy)
@@ -2406,7 +2429,8 @@ void M_UpdateLastSight (edict_t *self)
 		return;
 
 	// is the goal entity visible?
-	if (!visible(self, goal))
+	if (!visible(self, goal) &&
+		(!(self->monsterinfo.aiflags & AI_ALTERNATE_FLY) || goal != self->enemy || !M_MonsterHasCombatSight(self, goal)))
 		return;
 
 	// last sight position has not been reached yet
@@ -2541,7 +2565,7 @@ void drone_think (edict_t *self)
 	// don't slide
 	if (self->groundentity)
 		VectorClear(self->velocity);
-	else if (self->flags & FL_FLY)
+	else if ((self->flags & FL_FLY) && !(self->monsterinfo.aiflags & AI_ALTERNATE_FLY))
 	{
 		self->velocity[0] *= 0.8;
 		if (self->velocity[0] < 1)

@@ -29,6 +29,16 @@ static void carrier_walk(edict_t *self);
 static void carrier_run(edict_t *self);
 static void carrier_attack(edict_t *self);
 
+static void carrier_set_fly_parameters(edict_t *self)
+{
+	self->monsterinfo.fly_thrusters = false;
+	self->monsterinfo.fly_acceleration = 5.0f;
+	self->monsterinfo.fly_speed = 50.0f;
+	self->monsterinfo.fly_above = true;
+	self->monsterinfo.fly_min_distance = 1000.0f;
+	self->monsterinfo.fly_max_distance = 1000.0f;
+}
+
 static const int carrier_summons[CARRIER_SUMMON_COUNT] =
 {
 	M_DAEDALUS,
@@ -514,6 +524,8 @@ void init_drone_carrier(edict_t *self)
 	self->mass = 1000;
 	self->mtype = M_CARRIER;
 	self->flags |= FL_FLY;
+	self->monsterinfo.aiflags |= AI_ALTERNATE_FLY;
+	carrier_set_fly_parameters(self);
 	self->s.scale = 0.75f;
 
 	self->monsterinfo.power_armor_type = POWER_ARMOR_SHIELD;
@@ -538,6 +550,4 @@ void init_drone_carrier(edict_t *self)
 	self->monsterinfo.currentmove = &carrier_move_stand;
 	self->monsterinfo.scale = MODEL_SCALE;
 	self->nextthink = level.time + FRAMETIME;
-
-	G_PrintGreenText(va("A level %d carrier has spawned!", self->monsterinfo.level));
 }

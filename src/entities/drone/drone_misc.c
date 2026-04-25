@@ -404,15 +404,26 @@ void drone_ai_checkattack (edict_t *self)
 	// if we see an easier target, go for it
 	if (!visible(self, self->enemy))
 	{
-		self->oldenemy = self->enemy;
-		if (!drone_findtarget(self, false))
-			return;
-		//gi.dprintf("%d going for an easier target\n", self->mtype);
+		if (!(self->monsterinfo.aiflags & AI_ALTERNATE_FLY) || !M_MonsterHasCombatSight(self, self->enemy))
+		{
+			self->oldenemy = self->enemy;
+			if (!drone_findtarget(self, false))
+				return;
+			//gi.dprintf("%d going for an easier target\n", self->mtype);
+		}
 	}
 
 	//if (!infront(self, self->enemy))
 	if (!nearfov(self, self->enemy, 0, 60))
 	{
+		if ((self->monsterinfo.aiflags & AI_ALTERNATE_FLY) && M_MonsterHasCombatSight(self, self->enemy))
+		{
+			vec3_t dir;
+			VectorSubtract(self->enemy->s.origin, self->s.origin, dir);
+			self->ideal_yaw = vectoyaw(dir);
+			M_ChangeYaw(self);
+			M_ChangeYaw(self);
+		}
 		//gi.dprintf("target is not in front\n");
 		return;
 	}
@@ -425,10 +436,13 @@ void drone_ai_checkattack (edict_t *self)
 	if (!tr.ent || tr.ent != self->enemy)
 	{
 		//gi.dprintf("blocked shot\n");
-		if (G_ValidTarget(self, tr.ent, false, true))
-			self->enemy = tr.ent;
-		else
-			return;
+		if (!(self->monsterinfo.aiflags & AI_ALTERNATE_FLY) || !M_MonsterHasCombatSight(self, self->enemy))
+		{
+			if (G_ValidTarget(self, tr.ent, false, true))
+				self->enemy = tr.ent;
+			else
+				return;
+		}
 	}
 	//AngleVectors(self->s.angles, forward, NULL, NULL);
 	//VectorMA(self->s.origin, self->maxs[1]+8, forward , start);
@@ -531,7 +545,7 @@ void drone_death (edict_t *self, edict_t *attacker)
 
 
 	//4.2 bosses can drop up to 4 runes
-	if (self->mtype == M_COMMANDER || self->mtype == M_SUPERTANK || self->mtype == M_MAKRON || self->mtype == M_CARRIER || self->mtype == M_GUARDIAN)
+	if (self->mtype == M_COMMANDER || self->mtype == M_SUPERTANK || self->mtype == M_MAKRON || self->mtype == M_CARRIER)
 	{
 		edict_t *e;
 		float drop_chance = 0.25;
@@ -635,12 +649,59 @@ void PassThruEntity (edict_t *self, edict_t *other)
 	gi.linkentity(other);
 }
 
+static qboolean drone_alt_fly_separation_touch(edict_t *self, edict_t *other)
+{
+	vec3_t dir;
+	float dir_len;
+
+	if (!self || !other || self == other)
+		return false;
+	if (self->mtype != M_FLYER)
+		return false;
+	if (!(self->monsterinfo.aiflags & AI_ALTERNATE_FLY))
+		return false;
+	if (!(other->monsterinfo.aiflags & AI_ALTERNATE_FLY) || !(other->flags & FL_FLY))
+		return false;
+	if (!G_EntIsAlive(self) || !G_EntIsAlive(other))
+		return false;
+	if (self->monsterinfo.fly_separation_time > level.time)
+		return true;
+
+	VectorSubtract(self->s.origin, other->s.origin, dir);
+	dir_len = VectorNormalize(dir);
+	if (dir_len <= 0.1f)
+	{
+		VectorSet(dir, crandom(), crandom(), 0.2f);
+		if (VectorNormalize(dir) <= 0.1f)
+			VectorSet(dir, 1.0f, 0.0f, 0.0f);
+	}
+
+	self->monsterinfo.fly_separation_time = level.time + 1.0f;
+	self->monsterinfo.fly_thrusters = false;
+	self->monsterinfo.fly_position_time = 0.0f;
+	self->monsterinfo.fly_pinned = false;
+	VectorScale(dir, 500.0f, self->velocity);
+
+	gi.WriteByte(svc_temp_entity);
+	gi.WriteByte(TE_SPLASH);
+	gi.WriteByte(32);
+	gi.WritePosition(self->s.origin);
+	gi.WriteDir(dir);
+	gi.WriteByte(SPLASH_SPARKS);
+	gi.multicast(self->s.origin, MULTICAST_PVS);
+
+	return true;
+}
+
 void drone_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf)
 {
 	vec3_t	forward, right, start, offset;
 
 	//gi.dprintf("drone_touch\n");
 	V_Touch(self, other, plane, surf);
+
+	if (drone_alt_fly_separation_touch(self, other))
+		return;
 
 	// the monster's owner or allies can push him around
 	//if (G_EntIsAlive(other) && self->activator
@@ -1509,6 +1570,66 @@ double randfrac(void) {
 
 // note: flash_number is used by monsters to determine muzzle location; use -1 if muzzle location is already known, or 0 for non-monsters to estimate muzzle location
 // aiming vector will be copied to 'forward' and can be used for firing functions
+static qboolean M_MonsterTraceCombatSight(edict_t *self, vec3_t start, vec3_t end)
+{
+	if (!gi.inPVS(start, end))
+		return false;
+
+	return gi.trace(start, NULL, NULL, end, self, MASK_SOLID).fraction == 1.0f;
+}
+
+qboolean M_MonsterHasCombatSight(edict_t *self, edict_t *other)
+{
+	vec3_t start, end;
+
+	if (!G_EntExists(other))
+		return false;
+
+	if (visible(self, other))
+		return true;
+
+	G_EntViewPoint(self, start);
+	G_EntViewPoint(other, end);
+	if (M_MonsterTraceCombatSight(self, start, end))
+		return true;
+
+	G_EntMidPoint(other, end);
+	if (M_MonsterTraceCombatSight(self, start, end))
+		return true;
+
+	G_EntMidPoint(self, start);
+	if (M_MonsterTraceCombatSight(self, start, end))
+		return true;
+
+	return false;
+}
+
+qboolean M_MonsterHasClearShotFrom(edict_t *self, vec3_t start)
+{
+	vec3_t end;
+	trace_t tr;
+
+	if (!G_EntExists(self->enemy))
+		return false;
+
+	if (M_MonsterHasCombatSight(self, self->enemy))
+		return true;
+
+	G_EntMidPoint(self->enemy, end);
+	tr = gi.trace(start, NULL, NULL, end, self, MASK_SHOT);
+	return tr.ent && tr.ent == self->enemy;
+}
+
+void M_MonsterBlockedShot(edict_t *self, float delay)
+{
+	if (!(self->monsterinfo.aiflags & AI_ALTERNATE_FLY))
+		return;
+
+	self->monsterinfo.fly_position_time = 0.0f;
+	self->monsterinfo.fly_pinned = false;
+	self->monsterinfo.attack_finished = max(self->monsterinfo.attack_finished, level.time + delay);
+}
+
 void MonsterAim (edict_t *self, float accuracy, int projectile_speed, qboolean rocket,
 				 int flash_number, vec3_t forward, vec3_t start)
 {

@@ -28,6 +28,18 @@ void flyer_melee (edict_t *self);
 void flyer_setstart (edict_t *self);
 void flyer_stand (edict_t *self);
 void flyer_nextmove (edict_t *self);
+static void flyer_attack_finished(edict_t *self);
+
+static void flyer_set_fly_parameters(edict_t *self)
+{
+	// Future melee addon: restore close buzzard spacing when the melee attack
+	// is active again. For now flyers should keep hover-style ranged distance.
+	self->monsterinfo.fly_thrusters = false;
+	self->monsterinfo.fly_acceleration = 15.0f;
+	self->monsterinfo.fly_speed = 165.0f;
+	self->monsterinfo.fly_min_distance = 250.0f;
+	self->monsterinfo.fly_max_distance = 450.0f;
+}
 
 
 void flyer_sight (edict_t *self, edict_t *other)
@@ -367,6 +379,11 @@ void flyer_fire (edict_t *self, int flash_number)
 		VectorScale(offset, self->s.scale, offset);
 	G_ProjectSource(self->s.origin, offset, forward, right, start);
 	MonsterAim(self, M_PROJECTILE_ACC, 2000, false, -1, forward, start);
+	if (!M_MonsterHasClearShotFrom(self, start))
+	{
+		M_MonsterBlockedShot(self, 0.35f);
+		return;
+	}
 	monster_fire_blaster(self, start, forward, damage, 2000, effect, BLASTER_PROJ_BOLT, 2.0, false, flash_number);
 }
 
@@ -380,49 +397,66 @@ void flyer_fireright (edict_t *self)
 	flyer_fire (self, MZ2_FLYER_BLASTER_2);
 }
 
+static void flyer_reattack_blaster(edict_t *self)
+{
+	if (G_EntExists(self->enemy) && visible(self, self->enemy) && random() < 0.55f)
+	{
+		self->monsterinfo.nextframe = FRAME_attak204;
+		return;
+	}
+
+	flyer_attack_finished(self);
+}
+
 mframe_t flyer_frames_attack3[] =
 {
-		ai_charge, 0, NULL,
-		ai_charge, 0, NULL,
-		ai_charge, 0, NULL,
-		ai_charge, 0, flyer_fireleft,			// left gun
-		ai_charge, 0, flyer_fireright,		// right gun
-		ai_charge, 0, flyer_fireleft,			// left gun
-		ai_charge, 0, flyer_fireright,		// right gun
-		ai_charge, 0, flyer_fireleft,			// left gun
-		ai_charge, 0, flyer_fireright,		// right gun
-		ai_charge, 0, flyer_fireleft,			// left gun
-		ai_charge, 0, flyer_fireright,		// right gun
-		ai_charge, 0, NULL,
-		ai_charge, 0, NULL,
-		ai_charge, 0, NULL,
-		ai_charge, 0, NULL,
-		ai_charge, 0, NULL,
-		ai_charge, 0, NULL
+		ai_charge, 10, NULL,
+		ai_charge, 10, NULL,
+		ai_charge, 10, NULL,
+		ai_charge, 10, flyer_fireleft,			// left gun
+		ai_charge, 10, flyer_fireright,		// right gun
+		ai_charge, 10, flyer_fireleft,			// left gun
+		ai_charge, 10, flyer_fireright,		// right gun
+		ai_charge, 10, flyer_fireleft,			// left gun
+		ai_charge, 10, flyer_fireright,		// right gun
+		ai_charge, 10, flyer_fireleft,			// left gun
+		ai_charge, 10, flyer_fireright,		// right gun
+		ai_charge, 10, NULL,
+		ai_charge, 10, NULL,
+		ai_charge, 10, NULL,
+		ai_charge, -15, flyer_reattack_blaster,
+		ai_charge, 10, NULL,
+		ai_charge, 10, NULL
 };
-mmove_t flyer_move_attack3 = { FRAME_attak201, FRAME_attak217, flyer_frames_attack3, flyer_run };
+static void flyer_attack_finished(edict_t *self)
+{
+	self->monsterinfo.attack_finished = level.time + 0.8f + random() * 0.6f;
+	flyer_run(self);
+}
+
+mmove_t flyer_move_attack3 = { FRAME_attak201, FRAME_attak217, flyer_frames_attack3, flyer_attack_finished };
 
 mframe_t flyer_frames_attack2 [] =
 {
-		drone_ai_run, 20, NULL,
-		drone_ai_run, 20, NULL,
-		drone_ai_run, 20, NULL,
-		drone_ai_run, 20, flyer_fireleft,			// left gun
-		drone_ai_run, 20, flyer_fireright,		// right gun
-		drone_ai_run, 20, flyer_fireleft,			// left gun
-		drone_ai_run, 20, flyer_fireright,		// right gun
-		drone_ai_run, 20, flyer_fireleft,			// left gun
-		drone_ai_run, 20, flyer_fireright,		// right gun
-		drone_ai_run, 20, flyer_fireleft,			// left gun
-		drone_ai_run, 20, flyer_fireright,		// right gun
-		drone_ai_run, 20, NULL,
-		drone_ai_run, 20, NULL,
-		drone_ai_run, 20, NULL,
-		drone_ai_run, 20, NULL,
-		drone_ai_run, 20, NULL,
-		drone_ai_run, 20, NULL
+		ai_charge, 0, NULL,
+		ai_charge, 0, NULL,
+		ai_charge, 0, NULL,
+		ai_charge, -10, flyer_fireleft,			// left gun
+		ai_charge, -10, flyer_fireright,		// right gun
+		ai_charge, -10, flyer_fireleft,			// left gun
+		ai_charge, -10, flyer_fireright,		// right gun
+		ai_charge, -10, flyer_fireleft,			// left gun
+		ai_charge, -10, flyer_fireright,		// right gun
+		ai_charge, -10, flyer_fireleft,			// left gun
+		ai_charge, -10, flyer_fireright,		// right gun
+		ai_charge, 0, NULL,
+		ai_charge, 0, NULL,
+		ai_charge, 0, NULL,
+		ai_charge, -15, flyer_reattack_blaster,
+		ai_charge, 0, NULL,
+		ai_charge, 0, NULL
 };
-mmove_t flyer_move_attack2 = {FRAME_attak201, FRAME_attak217, flyer_frames_attack2, flyer_run};
+mmove_t flyer_move_attack2 = {FRAME_attak201, FRAME_attak217, flyer_frames_attack2, flyer_attack_finished};
 
 
 void flyer_slash_left (edict_t *self)
@@ -483,12 +517,23 @@ mmove_t flyer_move_loop_melee = {FRAME_attak107, FRAME_attak118, flyer_frames_lo
 void flyer_check_melee(edict_t *self)
 {
 	if (entdist (self, self->enemy) == RANGE_MELEE)
+	{
 		if (random() <= 0.8)
+		{
+			flyer_set_fly_parameters(self);
 			self->monsterinfo.currentmove = &flyer_move_loop_melee;
+		}
 		else
+		{
+			flyer_set_fly_parameters(self);
 			self->monsterinfo.currentmove = &flyer_move_end_melee;
+		}
+	}
 	else
+	{
+		flyer_set_fly_parameters(self);
 		self->monsterinfo.currentmove = &flyer_move_end_melee;
+	}
 }
 
 void flyer_loop_melee (edict_t *self)
@@ -503,13 +548,28 @@ void flyer_loop_melee (edict_t *self)
 
 void flyer_attack (edict_t *self)
 {
+	flyer_set_fly_parameters(self);
+
 /*	if (random() <= 0.5)	
 		self->monsterinfo.currentmove = &flyer_move_attack1;
 	else */
 	if (self->monsterinfo.aiflags & AI_STAND_GROUND)
+	{
+		self->monsterinfo.attack_state = AS_STRAIGHT;
 		self->monsterinfo.currentmove = &flyer_move_attack3;
-	else
+	}
+	else if (random() < 0.5f)
+	{
+		self->monsterinfo.attack_state = AS_STRAIGHT;
 		self->monsterinfo.currentmove = &flyer_move_attack2;
+	}
+	else
+	{
+		if (random() <= 0.5f)
+			self->monsterinfo.lefty = 1 - self->monsterinfo.lefty;
+		self->monsterinfo.attack_state = AS_SLIDING;
+		self->monsterinfo.currentmove = &flyer_move_attack3;
+	}
 }
 
 void flyer_setstart (edict_t *self)
@@ -533,6 +593,7 @@ void flyer_melee (edict_t *self)
 //	flyer.nextmove = ACTION_attack1;
 //	self->monsterinfo.currentmove = &flyer_move_stop;
 	//self->monsterinfo.currentmove = &flyer_move_start_melee;
+	flyer_set_fly_parameters(self);
 }
 
 void flyer_pain (edict_t *self, edict_t *other, float kick, int damage)
@@ -608,6 +669,9 @@ void init_drone_flyer (edict_t *self)
 
 	self->mtype = M_FLYER;
 	self->flags |= FL_FLY;
+	self->monsterinfo.aiflags |= AI_ALTERNATE_FLY;
+	self->monsterinfo.fly_buzzard = true;
+	flyer_set_fly_parameters(self);
 	self->max_health = self->health;
 	self->monsterinfo.power_armor_power = M_FLYER_INITIAL_ARMOR + M_FLYER_ADDON_ARMOR*self->monsterinfo.level;
 	self->monsterinfo.power_armor_type = POWER_ARMOR_SHIELD;

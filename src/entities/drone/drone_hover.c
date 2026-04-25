@@ -47,6 +47,15 @@ void hover_reattack (edict_t *self);
 void hover_fire_blaster (edict_t *self);
 void hover_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damage, vec3_t point);
 
+static void hover_set_fly_parameters(edict_t *self)
+{
+	self->monsterinfo.fly_thrusters = false;
+	self->monsterinfo.fly_acceleration = 20.0f;
+	self->monsterinfo.fly_speed = 120.0f;
+	self->monsterinfo.fly_min_distance = 250.0f;
+	self->monsterinfo.fly_max_distance = 450.0f;
+}
+
 mframe_t hover_frames_stand [] =
 {
 	drone_ai_stand, 0, NULL,
@@ -296,41 +305,41 @@ mmove_t hover_move_walk = {FRAME_forwrd01, FRAME_forwrd35, hover_frames_walk, NU
 
 mframe_t hover_frames_run [] =
 {
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL,
+	drone_ai_run,	10,	NULL
 };
 mmove_t hover_move_run = {FRAME_forwrd01, FRAME_forwrd35, hover_frames_run, NULL};
 
@@ -414,32 +423,32 @@ mmove_t hover_move_start_attack = {FRAME_attak101, FRAME_attak103, hover_frames_
 
 mframe_t hover_frames_attack2[] =
 {
-	ai_charge,	15,	hover_fire_blaster,
-	ai_charge,	15,	hover_fire_blaster,
-	ai_charge,	15,	hover_reattack
+	ai_charge,	10,	hover_fire_blaster,
+	ai_charge,	10,	hover_fire_blaster,
+	ai_charge,	10,	hover_reattack
 };
 mmove_t hover_move_attack2 = { FRAME_attak104, FRAME_attak106, hover_frames_attack2, hover_run };
 
 mframe_t hover_frames_attack1 [] =
 {
-	drone_ai_run,	15,	hover_fire_blaster,
-	drone_ai_run,	15,	hover_fire_blaster,
-	drone_ai_run,	15,	hover_reattack
+	ai_charge,	-10,	hover_fire_blaster,
+	ai_charge,	-10,	hover_fire_blaster,
+	ai_charge,	0,	hover_reattack
 };
 mmove_t hover_move_attack1 = {FRAME_attak104, FRAME_attak106, hover_frames_attack1, hover_run };
 
 
 mframe_t hover_frames_end_attack [] =
 {
-	drone_ai_run,	15,	NULL,
-	drone_ai_run,	15,	NULL
+	ai_charge,	1,	NULL,
+	ai_charge,	1,	NULL
 };
 mmove_t hover_move_end_attack = {FRAME_attak107, FRAME_attak108, hover_frames_end_attack, hover_run};
 
 void hover_reattack (edict_t *self)
 {
 	// if our enemy is still valid, then continue firing
-	if (G_ValidTarget(self, self->enemy, true, true) && (random() <= 0.9))
+	if (G_ValidTarget(self, self->enemy, true, true) && (random() <= 0.6))
 	{
 		self->s.frame = FRAME_attak104;
 		//hover_fire_blaster(self);
@@ -472,6 +481,11 @@ void hover_fire_blaster (edict_t *self)
 		damage = M_HYPERBLASTER_DMG_MAX;
 
 	MonsterAim(self, M_PROJECTILE_ACC, speed, true, MZ2_BOSS2_ROCKET_3, forward, start);
+	if (!M_MonsterHasClearShotFrom(self, start))
+	{
+		M_MonsterBlockedShot(self, 0.4f);
+		return;
+	}
 	monster_fire_rocket (self, start, forward, damage, speed, MZ2_BOSS2_ROCKET_3);
 }
 
@@ -501,9 +515,22 @@ void hover_start_attack (edict_t *self)
 void hover_attack(edict_t *self)
 {
 	if (self->monsterinfo.aiflags & AI_STAND_GROUND)
+	{
+		self->monsterinfo.attack_state = AS_STRAIGHT;
 		self->monsterinfo.currentmove = &hover_move_attack2;
-	else
+	}
+	else if (random() < 0.5f)
+	{
+		self->monsterinfo.attack_state = AS_STRAIGHT;
 		self->monsterinfo.currentmove = &hover_move_attack1;
+	}
+	else
+	{
+		if (random() <= 0.5f)
+			self->monsterinfo.lefty = 1 - self->monsterinfo.lefty;
+		self->monsterinfo.attack_state = AS_SLIDING;
+		self->monsterinfo.currentmove = &hover_move_attack2;
+	}
 }
 
 
@@ -636,6 +663,8 @@ void init_drone_hover (edict_t *self)
 
 	self->mtype = M_HOVER;
 	self->flags |= FL_FLY;
+	self->monsterinfo.aiflags |= AI_ALTERNATE_FLY;
+	hover_set_fly_parameters(self);
 	self->max_health = self->health;
 	self->monsterinfo.power_armor_power = M_FLOATER_INITIAL_ARMOR + M_FLOATER_ADDON_ARMOR*self->monsterinfo.level;
 	self->monsterinfo.power_armor_type = POWER_ARMOR_SHIELD;

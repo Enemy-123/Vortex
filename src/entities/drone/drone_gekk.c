@@ -74,6 +74,15 @@ static void gekk_search(edict_t *self)
 	gi.sound(self, CHAN_VOICE, sound_search, 1, ATTN_IDLE, 0);
 }
 
+static void gekk_set_fly_parameters(edict_t *self)
+{
+	self->monsterinfo.fly_thrusters = false;
+	self->monsterinfo.fly_acceleration = 25.0f;
+	self->monsterinfo.fly_speed = 150.0f;
+	self->monsterinfo.fly_min_distance = 10.0f;
+	self->monsterinfo.fly_max_distance = 10.0f;
+}
+
 static qboolean gekk_should_swim(edict_t *self)
 {
 	return self->waterlevel >= WATER_WAIST;
@@ -81,7 +90,9 @@ static qboolean gekk_should_swim(edict_t *self)
 
 static void gekk_set_water_bounds(edict_t *self)
 {
+	gekk_set_fly_parameters(self);
 	self->flags |= FL_SWIM;
+	self->monsterinfo.aiflags |= AI_ALTERNATE_FLY;
 	self->yaw_speed = 10;
 	self->viewheight = 10;
 	VectorSet(self->mins, -18, -18, -24);
@@ -92,6 +103,8 @@ static void gekk_set_water_bounds(edict_t *self)
 static void gekk_set_land_bounds(edict_t *self)
 {
 	self->flags &= ~FL_SWIM;
+	self->monsterinfo.aiflags &= ~AI_ALTERNATE_FLY;
+	self->monsterinfo.fly_pinned = false;
 	self->yaw_speed = 20;
 	self->viewheight = 25;
 	VectorSet(self->mins, -18, -18, -24);
